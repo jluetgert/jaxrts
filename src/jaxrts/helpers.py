@@ -2,12 +2,14 @@
 Miscellaneous helper functions.
 """
 
+import re
 import logging
 from functools import partialmethod, wraps
 from time import time
 from platformdirs import user_cache_dir
 import requests
 from pathlib import Path
+import numpy as onp
 
 
 import jaxrts
@@ -403,6 +405,47 @@ def download_from_nist(config) -> None:
             raise FileNotFoundError(
                 "Failed to download file from the NIST database"
             )
+
+
+def read_nist_file(config) -> (jnp.ndarray, Quantity):
+    """
+    Read in a nist file for excited states that was downloaded by
+    :py:func:`download_from_nist`. Estracts multiplicities `g` and energies
+    relative to the fully striped limit. I.e., this function returns
+    `E_lim - E_level`.
+    """
+    cache_dir = get_cache_dir()
+    nist_file = cache_dir / f"{config}.csv"
+    with open(nist_file) as f:
+        lines = f.readlines()
+
+    limit_pattern = re.compile(
+        r'''
+        "=""Limit[",=\(\s]*(?P<energy>\d+(?:\.\d+)?)"""
+        ''',
+        re.VERBOSE,
+    )
+    pattern = re.compile(
+        r'''
+        ,term,                               # Literal text “,term,”
+        (?P<g>\d+)                           #  "g"
+        ,"=""(?P<energy>\d+(?:\.\d+)?)"""    # energy in = and "
+    ''',
+        re.VERBOSE,
+    )
+    g = []
+    E = []
+    for line in lines:
+        match = pattern.search(line)
+        limit_match = limit_pattern.search(line)
+        if limit_match:
+            limit_E = float(limit_match.group("energy"))
+            break
+
+        if match:
+            g.append(int(match.group("g")))
+            E.append(float(match.group("energy")))
+    return jnp.array(g), (limit_E - jnp.array(E)) * ureg.electron_volt
 
 
 jax.tree_util.register_pytree_node(
