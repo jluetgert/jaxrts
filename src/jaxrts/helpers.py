@@ -5,6 +5,10 @@ Miscellaneous helper functions.
 import logging
 from functools import partialmethod, wraps
 from time import time
+from platformdirs import user_cache_dir
+import requests
+from pathlib import Path
+
 
 import jaxrts
 import jax
@@ -377,6 +381,28 @@ def bisection(
     )
 
     return final_state, iterations
+
+
+def get_cache_dir() -> Path:
+    cache_dir = Path(user_cache_dir("jaxrts", "jaxrts"))
+    cache_dir.mkdir(exist_ok=True)
+    return cache_dir
+
+
+def download_from_nist(config) -> None:
+    cache_dir = get_cache_dir()
+    file = cache_dir / f"{config}.csv"
+    if not file.exists():
+        r = requests.get(
+            f"https://physics.nist.gov/cgi-bin/ASD/energy1.pl?de=0&spectrum={config}&units=1&format=2&output=0&page_size=15&multiplet_ordered=0&average_out=1&conf_out=on&term_out=on&level_out=on&g_out=on&biblio=on&temp=&submit=Retrieve+Data"  # noqa: E501
+        )
+        if r.status_code == 200:
+            with open(file, "w") as f:
+                f.write(r.text)
+        else:
+            raise FileNotFoundError(
+                "Failed to download file from the NIST database"
+            )
 
 
 jax.tree_util.register_pytree_node(
