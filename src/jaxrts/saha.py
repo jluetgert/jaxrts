@@ -3,6 +3,7 @@ Module containing functions to solve the
 `Saha-equation <https://en.wikipedia.org/wiki/Saha_ionization_equation>`_,
 linking the temperature of a plasma to it's ionization.
 """
+
 import matplotlib.pyplot as plt
 from functools import partial
 
@@ -27,13 +28,17 @@ m_e = 1 * ureg.electron_mass
 
 @jax.jit
 def planck_larkian_partition_sum(
-    g: jnp.ndarray, E: Quantity, T: Quantity
+    g: jnp.ndarray,
+    E: Quantity,
+    T: Quantity,
 ) -> jnp.ndarray:
     """
-    See :cite:`Kramp.2005` eqn 6.182, with a cutoff for negative energies
+    See :cite:`Kremp.2005` eqn 6.182, with a cutoff for negative energies
     """
     ratio = (E / (T * ureg.boltzmann_constant)).m_as(ureg.dimensionless)
-    return jnp.sum(g * (jnp.exp(-ratio) - 1 + ratio) * jnp.heaviside(ratio, 0))
+    return jnp.sum(
+        g * (jnp.exp(-ratio) - 1 + ratio) * jnp.heaviside((E).m_as(ureg.eV), 0)
+    )
 
 
 def gen_balance_equation(
@@ -143,13 +148,15 @@ def saha_equation(
     )
 
 
-@partial(jax.jit, static_argnames=["element_list", "exclude_non_negative_energies"])
+@partial(
+    jax.jit, static_argnames=["element_list", "exclude_non_negative_energies"]
+)
 def solve_saha(
     element_list: list[Element],
     T_e: Quantity,
     ion_number_densities: Quantity,
     continuum_lowering: Quantity | None = None,
-    exclude_non_negative_energies : bool = True
+    exclude_non_negative_energies: bool = True,
 ) -> (Quantity, Quantity):
     """
     Solve the Saha equation for a list of elements at a given temperature.
@@ -209,7 +216,7 @@ def solve_saha(
         A fixed value that is subtracted from all binding energies. Defaults to
         0 eV.
     exclude_non_negative_energies : bool, default = True
-        If true, bound states for which the ionization energy is pushed into the continuum are removed 
+        If true, bound states for which the ionization energy is pushed into the continuum are removed
         from the calculation and do not appear with their Boltzmann factors in the Saha equations.
 
     Returns
@@ -318,7 +325,7 @@ def solve_saha(
             diag = jnp.diag(jnp.where(Eb > 0, (-1) * coeff, 1))
         else:
             diag = jnp.diag(jnp.where(Eb > 0, (-1) * coeff, (-1) * coeff))
-        
+
         dens_row = jnp.ones(element.Z + 1)
 
         # Set the diagonal for the Saha-rows
@@ -416,7 +423,9 @@ def solve_saha(
     )
 
 
-@partial(jax.jit, static_argnames=["element_list", "exclude_non_negative_energies"])
+@partial(
+    jax.jit, static_argnames=["element_list", "exclude_non_negative_energies"]
+)
 def solve_gen_saha(
     element_list: list[Element],
     T_e: Quantity,
@@ -424,7 +433,7 @@ def solve_gen_saha(
     ion_number_densities: Quantity,
     continuum_lowering: Quantity = 0 * ureg.electron_volt,
     chem_pot_ideal: Quantity = 0 * ureg.electron_volt,
-    exclude_non_negative_energies : bool = True
+    exclude_non_negative_energies: bool = True,
 ) -> (Quantity, Quantity):
     """
     Solve the Saha equation for a list of elements at a given temperature.
@@ -486,7 +495,7 @@ def solve_gen_saha(
     chem_pot_ideal: Quantity, default: 0 eV
         The ideal chemical potential used in the Saha equation.
     exclude_non_negative_energies : bool, default = True
-        If true, bound states for which the ionization energy is pushed into the continuum are removed 
+        If true, bound states for which the ionization energy is pushed into the continuum are removed
         from the calculation and do not appear with their Boltzmann factors in the Saha equations.
 
     Returns
@@ -539,10 +548,12 @@ def solve_gen_saha(
 
     all_binding_energies = jnp.concatenate(Ebs)
 
-    nom = jnp.heaviside(all_binding_energies, 0) if exclude_non_negative_energies else 1
-    ratio = jnp.sum(
-        nom / len(all_binding_energies)
+    nom = (
+        jnp.heaviside(all_binding_energies, 0)
+        if exclude_non_negative_energies
+        else 1
     )
+    ratio = jnp.sum(nom / len(all_binding_energies))
 
     _ne_range = jnp.array(
         [
@@ -550,13 +561,17 @@ def solve_gen_saha(
             max_ne.m_as(1 / ureg.m**3),
         ]
     )
-    ne_scale = jnp.interp(
-        (T_e * k_B).m_as(ureg.electron_volt),
-        jnp.array([1, 1000]),
-        _ne_range,
-        left=_ne_range[0],
-        right=_ne_range[-1],
-    ) * (1 / ureg.m**3) * 1E2
+    ne_scale = (
+        jnp.interp(
+            (T_e * k_B).m_as(ureg.electron_volt),
+            jnp.array([1, 1000]),
+            _ne_range,
+            left=_ne_range[0],
+            right=_ne_range[-1],
+        )
+        * (1 / ureg.m**3)
+        * 1e2
+    )
 
     # Offset (each element will have a block of size Z+1) This value specifies
     # the block.
@@ -601,7 +616,7 @@ def solve_gen_saha(
             diag = jnp.diag(jnp.where(Eb > 0, (-1) * coeff, 1))
         else:
             diag = jnp.diag(jnp.where(Eb > 0, (-1) * coeff, (-1) * coeff))
-        
+
         dens_row = jnp.ones(element.Z + 1)
 
         # Set the diagonal for the Saha-rows
@@ -817,10 +832,10 @@ def solve_BU(
     part_funcs = []
     for element, ipd in zip(element_list, continuum_lowering, strict=True):
         pls = []
-        for charge, cl in zip(range(element.Z), ipd, strict=True):
+        Ebs = jnpu.sort(element.ionization.energies) + ipd
+        for charge, cl, Eb in zip(range(element.Z), ipd, Ebs, strict=True):
             g, E = read_nist_file(f"{element.symbol}{charge}")
-            E += cl
-            pls.append(planck_larkian_partition_sum(g, E, T_e))
+            pls.append(planck_larkian_partition_sum(g, Eb - E, T_e))
         pls.append(1)
         part_funcs.append(jnp.array(pls))
 
@@ -904,7 +919,7 @@ def solve_BU(
             # Not the full off-diagonal equals n_e: The density rows don't
             # contain it!
             ne_line = ne_line.at[skip + 1 : skip + element.Z + 1].multiply(
-                    jnp.heaviside(part_func[:-1], 0)
+                jnp.heaviside(part_func[:-1], 0)
             )
             ne_line = ne_line.at[skip + element.Z + 1].set(0.0)
             skip += element.Z + 1
@@ -1027,7 +1042,7 @@ def calculate_mean_free_charge_saha(
     use_distribution:
         If true, the ipd is evaluated for each ion species separately.
     exclude_non_negative_energies : bool, default = True
-        If true, bound states for which the ionization energy is pushed into the continuum are removed 
+        If true, bound states for which the ionization energy is pushed into the continuum are removed
         from the calculation and do not appear with their Boltzmann factors in the Saha equations.
 
     Returns
@@ -1043,10 +1058,11 @@ def calculate_mean_free_charge_saha(
         Function used to solve the saha equation
     """
 
-    plasma_state.Z_free = jnp.array(jnp.max(jnp.array([i.Z for i in plasma_state.ions])))
+    plasma_state.Z_free = jnp.array(
+        jnp.max(jnp.array([i.Z for i in plasma_state.ions]))
+    )
 
     if not use_chem_pot:
-
         charge_distribution, ne, Z_mean = solve_saha(
             tuple(plasma_state.ions),
             plasma_state.T_e,
@@ -1059,7 +1075,7 @@ def calculate_mean_free_charge_saha(
                     plasma_state,
                     charge_distribution if use_distribution else None,
                 )
- 
+
             else:
                 cl = [
                     jnp.zeros(ion.Z) * ureg.electron_volt
@@ -1071,7 +1087,7 @@ def calculate_mean_free_charge_saha(
                 plasma_state.T_e,
                 (plasma_state.mass_density / plasma_state.atomic_masses),
                 continuum_lowering=cl,
-                exclude_non_negative_energies = exclude_non_negative_energies
+                exclude_non_negative_energies=exclude_non_negative_energies,
             )
             plasma_state.Z_free = jnp.array(Z_mean)
 
@@ -1083,7 +1099,6 @@ def calculate_mean_free_charge_saha(
         )
 
         for k in range(6):
-
             chem_pot_ideal = plasma_state["chemical potential"].evaluate(
                 plasma_state, None
             )
@@ -1105,7 +1120,7 @@ def calculate_mean_free_charge_saha(
                 (plasma_state.mass_density / plasma_state.atomic_masses),
                 continuum_lowering=cl,
                 chem_pot_ideal=chem_pot_ideal,
-                exclude_non_negative_energies = exclude_non_negative_energies
+                exclude_non_negative_energies=exclude_non_negative_energies,
             )
 
             plasma_state.Z_free = jnp.array(Z_mean)
