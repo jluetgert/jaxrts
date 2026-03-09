@@ -27,7 +27,7 @@ m_e = 1 * ureg.electron_mass
 
 
 @jax.jit
-def planck_larkian_partition_sum(
+def planck_larkin_partition_sum(
     g: jnp.ndarray,
     E: Quantity,
     T: Quantity,
@@ -805,7 +805,7 @@ def solve_BU(
     --------
     jaxrts.saha.gen_balance_equation
          Function used to calculate balance between two adjacent charge states.
-    jaxrts.saha.planck_larkian_partition_sum
+    jaxrts.saha.planck_larkin_partition_sum
          The partition sum approximation used.
     """
 
@@ -833,9 +833,10 @@ def solve_BU(
     for element, ipd in zip(element_list, continuum_lowering, strict=True):
         pls = []
         Ebs = jnpu.sort(element.ionization.energies) + ipd
+
         for charge, cl, Eb in zip(range(element.Z), ipd, Ebs, strict=True):
             g, E = read_nist_file(f"{element.symbol}{charge}")
-            pls.append(planck_larkian_partition_sum(g, Eb - E, T_e))
+            pls.append(planck_larkin_partition_sum(g, Eb - E, T_e))
         pls.append(1)
         part_funcs.append(jnp.array(pls))
 
