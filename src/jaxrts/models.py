@@ -40,6 +40,7 @@ from .setup import (
     get_probe_setup,
 )
 from .units import Quantity, to_array, ureg
+from .weissker_interpolator import SiiInterpolator
 
 if TYPE_CHECKING:
     from .plasmastate import PlasmaState
@@ -756,6 +757,81 @@ class FixedSii(IonFeatModel):
         obj = object.__new__(cls)
         (obj.model_key,) = aux_data
         (obj._S_ii,) = children
+
+        return obj
+
+
+class GridInterpolationSii(IonFeatModel):
+    """
+    Interpolates :math:`S_{ab}` from a grid.
+    """
+
+    __name__ = "GridInterpolation"
+    cite_keys = [("Weissker.2009", "Interpolation scheme")]
+    supports_S_ii_grid = True
+
+    def __init__(
+        self,
+        interpolator: SiiInterpolator,
+        variable_names: list[str],
+    ) -> None:
+        #: The :py:class:`jaxrts.weissker_interpolator.SiiInterpolator` that
+        #: should be used for the interpolation.
+        #: Containes the grid points, as well as the interpolation scheme.
+        self.interpolator: SiiInterpolator = interpolator
+        #: Defines what of the plasma-state should be passed to the
+        #: ``interpolator`` when the latter is called. Naming allowed strings
+        #: are either just flat attributes of the :py:class:`~.PlasmaState`, or
+        #: function names of jnpu, followed by a '%' and then '%' separated
+        #: names of attributes to a :py:class:`~.PlasmaState` that should be
+        #: given as arguments.
+        #: Practically this could be, e.g. `"T_e"` or `"sum%mass_density"`
+        self.variable_names: list[str] = variable_names
+        super().__init__()
+
+    def prepare(self, plasma_state: "PlasmaState", key: str) -> None:
+        super().prepare(plasma_state, key)
+
+    @property
+    def k(self):
+        return self.interpolator.k / (1 * ureg.angstrom)
+
+    @jax.jit
+    def S_ii(self, plasma_state: "PlasmaState", setup: Setup) -> jnp.ndarray:
+        k_grid, S_ab_grid = self.S_ii_on_grid(plasma_state)
+        return hypernetted_chain.hnc_interp(setup.k, k_grid, S_ab_grid)
+
+    @jax.jit
+    def S_ii_on_grid(
+        self, plasma_state: "PlasmaState"
+    ) -> (jnp.ndarray, jnp.ndarray):
+        variables = []
+
+        # Allow to specify an jnp operation and arguments -- which have to be
+        # attributes to the pasma state -- seperated by a % sign.
+        for var in self.variable_names:
+            if "%" in var:
+                operation, *args = var.split("%")
+                variables.append(
+                    getattr(jnpu, operation)(
+                        *[getattr(plasma_state, a) for a in args]
+                    )
+                )
+            else:
+                variables.append(getattr(plasma_state, var))
+        return self.k, self.interpolator(variables)
+
+    # The following is required to jit a Model
+    def _tree_flatten(self):
+        children = (self.interpolator,)
+        aux_data = (self.variable_names,)
+        return (children, aux_data)
+
+    @classmethod
+    def _tree_unflatten(cls, aux_data, children):
+        obj = object.__new__(cls)
+        (obj.interpolator,) = children
+        (obj.variable_names,) = aux_data
 
         return obj
 
@@ -4231,9 +4307,9 @@ class LinearResponseScreeningGericke2010(Model):
             "electron-ion Potential",
             hnc_potentials.CoulombPotential(),
         )
-        plasma_state["electron-ion Potential"].include_electrons = (
-            "SpinAveraged"
-        )
+        plasma_state[
+            "electron-ion Potential"
+        ].include_electrons = "SpinAveraged"
 
     @jax.jit
     def evaluate(
@@ -4374,9 +4450,9 @@ class FiniteWavelengthScreening(Model):
             "electron-ion Potential",
             hnc_potentials.CoulombPotential(),
         )
-        plasma_state["electron-ion Potential"].include_electrons = (
-            "SpinAveraged"
-        )
+        plasma_state[
+            "electron-ion Potential"
+        ].include_electrons = "SpinAveraged"
 
     @jax.jit
     def evaluate(
@@ -4477,9 +4553,9 @@ class LinearResponseScreening(Model):
             "electron-ion Potential",
             hnc_potentials.CoulombPotential(),
         )
-        plasma_state["electron-ion Potential"].include_electrons = (
-            "SpinAveraged"
-        )
+        plasma_state[
+            "electron-ion Potential"
+        ].include_electrons = "SpinAveraged"
         plasma_state["free-free scattering"] = RPA_DandreaFit()
 
     @jax.jit
