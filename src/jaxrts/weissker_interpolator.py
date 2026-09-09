@@ -33,10 +33,12 @@ class SiiInterpolator:
             initial=0.0,
         )
         norm = integral[:, :, -1, :]
-        self.interpolator = VRegularGridInterpolator(
+        self.interpolator = VRegularGridLinearInterpolator(
             self.variables, integral / norm[:, :, jnp.newaxis, :]
         )
-        self.norm_interpolator = VRegularGridInterpolator(self.variables, norm)
+        self.norm_interpolator = VRegularGridLinearInterpolator(
+            self.variables, norm
+        )
 
     @jax.jit
     def __call__(self, point):
@@ -78,7 +80,7 @@ class SiiInterpolator:
 
 
 @jax.tree_util.register_pytree_node_class
-class VRegularGridInterpolator:
+class VRegularGridLinearInterpolator:
     """
     Vectorized RegularGridInterpolator, with a linear interpolation:
     Interpolated linarly over the last indices of `values`, i.e.,
