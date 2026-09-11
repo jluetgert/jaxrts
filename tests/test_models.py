@@ -73,6 +73,13 @@ def additional_model_parameters(
             S_plasmaModel,
             PowderModel,
         )
+    if model == jaxrts.models.GridInterpolationSii:
+        interpolator = jaxrts.weissker_interpolator.SiiInterpolator(
+            jnp.ones((no_of_ions, no_of_ions, 10, 2)) * ureg.dimensionless,
+            jnp.linspace(0, 10, 10) / (1 * ureg.angstrom),
+            jnp.array([0, 1e5]) * ureg.kelvin,
+        )
+        return (interpolator, ["T_e"])
     return ()
 
 
