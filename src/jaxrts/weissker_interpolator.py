@@ -24,6 +24,10 @@ class SiiInterpolator:
         """
         Sii shape: [i, j, k, variables]
         """
+        self.minima = jnp.min(
+            Sii.m_as(ureg.dimensionless),
+            axis=jnp.arange(len(Sii.shape) - 2) + 2,
+        )
         self.k = k.m_as(1 / ureg.angstrom)
         self.variables_units = [v.units for v in free_variables]
         self.variables = [
@@ -32,6 +36,9 @@ class SiiInterpolator:
                 free_variables, self.variables_units, strict=True
             )
         ]
+        free_axis = len(self.variables) + 1
+        Sii -= self.minima[:, :, *free_axis * [jnp.newaxis]]
+
         integral = cumulative_trapezoid(
             Sii.m_as(ureg.dimensionless),
             x=self.k,
@@ -69,16 +76,18 @@ class SiiInterpolator:
 
         norm = self.norm_interpolator(_point)
         Sii = jnp.gradient(interpolation, self.k, axis=2)
-        return (
+        out = (
             Sii
             * (norm / interpolation[:, :, -1])[:, :, jnp.newaxis]
             * 1
             * ureg.dimensionless
         )
+        return out + self.minima[:, :, jnp.newaxis]
 
     def tree_flatten(self):
         return (
             self.k,
+            self.minima,
             self.variables,
             self.interpolator,
             self.norm_interpolator,
@@ -89,6 +98,7 @@ class SiiInterpolator:
         obj = object.__new__(cls)
         (
             obj.k,
+            obj.minima,
             obj.variables,
             obj.interpolator,
             obj.norm_interpolator,
