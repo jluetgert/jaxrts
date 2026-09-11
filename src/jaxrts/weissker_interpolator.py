@@ -14,7 +14,13 @@ from .units import Quantity, ureg
 
 @jax.tree_util.register_pytree_node_class
 class SiiInterpolator:
-    def __init__(self, Sii: Quantity, k: Quantity, *free_variables):
+    def __init__(
+        self,
+        Sii: Quantity,
+        k: Quantity,
+        *free_variables,
+        grid_length: int = 1000,
+    ):
         """
         Sii shape: [i, j, k, variables]
         """
@@ -33,8 +39,14 @@ class SiiInterpolator:
             initial=0.0,
         )
         norm = integral[:, :, -1, :]
+        integral /= norm[:, :, jnp.newaxis, :]
+
+        flipped_integral = _invert_k_axis(
+            integral, jnp.linspace(0, 1, grid_length), self.k
+        )
+
         self.interpolator = VRegularGridLinearInterpolator(
-            self.variables, integral / norm[:, :, jnp.newaxis, :]
+            self.variables, flipped_integral
         )
         self.norm_interpolator = VRegularGridLinearInterpolator(
             self.variables, norm
@@ -48,7 +60,13 @@ class SiiInterpolator:
                 for (p, u) in zip(point, self.variables_units, strict=True)
             ]
         )
-        interpolation = self.interpolator(_point)
+        flipped_interpolation = self.interpolator(_point)
+        interpolation = _invert_k_axis(
+            flipped_interpolation,
+            self.k,
+            jnp.linspace(0, 1, flipped_interpolation.shape[2]),
+        )
+
         norm = self.norm_interpolator(_point)
         Sii = jnp.gradient(interpolation, self.k, axis=2)
         return (
@@ -97,21 +115,33 @@ class VRegularGridLinearInterpolator:
         ndim = len(self.points)
         lead = self.values.ndim - ndim  # number of vectorized channel axes
 
-        # type casting is required to ensure cube obly gets the same type
-        lo, frac = [], []
+        # type casting is required to ensure cube only gets the same type
+        lo, w_vecs, sizes = [], [], []
         for p, x in zip(self.points, point):
-            i = jnp.clip(jnp.searchsorted(p, x) - 1, 0, p.shape[0] - 2)
-            lo.append(i.astype(jnp.int32))
-            frac.append((x - p[i]) / (p[i + 1] - p[i]))
+            n = p.shape[0]  # static (Python int), safe to branch on
+            # If there is only one grid point per dimension, return only this
+            # function.
+            if n == 1:
+                i = jnp.zeros((), dtype=jnp.int32)
+                w = jnp.ones((1,), dtype=x.dtype)
+                sizes.append(1)
+            else:
+                i = jnp.clip(jnp.searchsorted(p, x) - 1, 0, n - 2).astype(
+                    jnp.int32
+                )
+                t = (x - p[i]) / (p[i + 1] - p[i])
+                w = jnp.stack([1 - t, t])
+                sizes.append(2)
+            lo.append(i)
+            w_vecs.append(w)
 
         weights = functools.reduce(
-            lambda a, b: jnp.tensordot(a, b, axes=0),
-            (jnp.stack([1 - t, t]) for t in frac),
+            lambda a, b: jnp.tensordot(a, b, axes=0), w_vecs
         )
 
         zeros = jnp.zeros((lead,), dtype=jnp.int32)
         start = tuple(zeros) + tuple(lo)
-        size = self.values.shape[:lead] + (2,) * ndim
+        size = self.values.shape[:lead] + tuple(sizes)
         cube = jax.lax.dynamic_slice(self.values, start, size)
 
         return jnp.tensordot(cube, weights, axes=ndim)
@@ -124,3 +154,32 @@ class VRegularGridLinearInterpolator:
         obj = object.__new__(cls)
         obj.points, obj.values = children
         return obj
+
+
+def _invert_k_axis(Sii, grid, x):
+    """
+    Invert the k axis (axis 2) of Sii by interpolating to the values on grid
+    """
+    # Move the axis to invert to the end
+    y = jnp.moveaxis(Sii, 2, -1)
+    shape = y.shape[:-1]
+
+    y = y.reshape(-1, y.shape[-1])
+
+    def inverse_interp(y_curve):
+        idx = jnp.searchsorted(y_curve, grid, side="left")
+        idx = jnp.clip(idx, 1, y_curve.size - 1)
+
+        y0 = y_curve[idx - 1]
+        y1 = y_curve[idx]
+
+        x0 = x[idx - 1]
+        x1 = x[idx]
+
+        return x0 + (grid - y0) * (x1 - x0) / (y1 - y0)
+
+    result = jax.vmap(inverse_interp)(y)
+
+    # Restore original order
+    result = result.reshape(*shape, grid.size)
+    return jnp.moveaxis(result, -1, 2)
