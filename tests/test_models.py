@@ -74,7 +74,7 @@ def additional_model_parameters(
             PowderModel,
         )
     if model == jaxrts.models.GridInterpolationSii:
-        interpolator = jaxrts.weissker_interpolator.SiiInterpolator(
+        interpolator = jaxrts.weissker_interpolator.AutoNormInterpolator(
             jnp.ones((no_of_ions, no_of_ions, 10, 2)) * ureg.dimensionless,
             jnp.linspace(0, 10, 10) / (1 * ureg.angstrom),
             jnp.array([0, 1e5]) * ureg.kelvin,

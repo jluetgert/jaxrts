@@ -15,7 +15,7 @@ putting it to a known value.
 """
 
 import jaxrts
-from jaxrts.weissker_interpolator import SiiInterpolator
+from jaxrts.weissker_interpolator import AutoNormInterpolator
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import pathlib
@@ -62,7 +62,7 @@ target_Sii = target_Sii[:, :, target_k < cutoff]
 target_k = target_k[target_k < cutoff]
 
 
-interpolator = SiiInterpolator(
+interpolator = AutoNormInterpolator(
     grid_Sii * ureg.dimensionless,
     target_k,
     state.T_e + (T_range * jnp.array([-0.5, 0.5])),

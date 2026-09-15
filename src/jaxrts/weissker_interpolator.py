@@ -13,21 +13,22 @@ from .units import Quantity, ureg
 
 
 @jax.tree_util.register_pytree_node_class
-class SiiInterpolator:
+class AutoNormInterpolator:
     def __init__(
         self,
-        Sii: Quantity,
+        array: Quantity,
         k: Quantity,
         *free_variables,
         grid_length: int = 1000,
     ):
         """
-        Sii shape: [i, j, k, variables]
+        Calculates over a grid with the following shape
+        [*vectorized_axis, k, *interpolation_variables]
         """
-        self.minima = jnp.min(
-            Sii.m_as(ureg.dimensionless),
-            axis=jnp.arange(len(Sii.shape) - 2) + 2,
-        )
+        # define some shapes.
+        self.out_shape = array.shape[: -len(free_variables)]
+        free_axis = len(free_variables) + 1
+
         self.k = k.m_as(1 / ureg.angstrom)
         self.variables_units = [v.units for v in free_variables]
         self.variables = [
@@ -36,20 +37,28 @@ class SiiInterpolator:
                 free_variables, self.variables_units, strict=True
             )
         ]
-        free_axis = len(self.variables) + 1
-        Sii -= self.minima[:, :, *free_axis * [jnp.newaxis]]
+        self.minima = jnp.min(
+            array.m_as(ureg.dimensionless),
+            axis=jnp.arange(len(array.shape) - self.number_of_vec_axis)
+            + self.number_of_vec_axis,
+        )
+        array -= self.minima[
+            *self.number_of_vec_axis * [jnp.s_[:]], *free_axis * [jnp.newaxis]
+        ]
 
         integral = cumulative_trapezoid(
-            Sii.m_as(ureg.dimensionless),
+            array.m_as(ureg.dimensionless),
             x=self.k,
-            axis=2,
+            axis=self.k_axis,
             initial=0.0,
         )
-        norm = integral[:, :, -1, :]
-        integral /= norm[:, :, jnp.newaxis, :]
+        norm = integral[*self.number_of_vec_axis * [jnp.s_[:]], -1, :]
+        integral /= norm[
+            *self.number_of_vec_axis * [jnp.s_[:]], jnp.newaxis, :
+        ]
 
         flipped_integral = _invert_k_axis(
-            integral, jnp.linspace(0, 1, grid_length), self.k
+            integral, jnp.linspace(0, 1, grid_length), self.k, self.k_axis
         )
 
         self.interpolator = VRegularGridLinearInterpolator(
@@ -58,6 +67,18 @@ class SiiInterpolator:
         self.norm_interpolator = VRegularGridLinearInterpolator(
             self.variables, norm
         )
+
+    @property
+    def number_of_variables(self):
+        return len(self.variables)
+
+    @property
+    def number_of_vec_axis(self):
+        return len(self.out_shape) - 1
+
+    @property
+    def k_axis(self):
+        return len(self.out_shape) - 1
 
     @jax.jit
     def __call__(self, point):
@@ -71,18 +92,25 @@ class SiiInterpolator:
         interpolation = _invert_k_axis(
             flipped_interpolation,
             self.k,
-            jnp.linspace(0, 1, flipped_interpolation.shape[2]),
+            jnp.linspace(0, 1, flipped_interpolation.shape[self.k_axis]),
+            self.k_axis,
         )
 
         norm = self.norm_interpolator(_point)
-        Sii = jnp.gradient(interpolation, self.k, axis=2)
+        Sii = jnp.gradient(interpolation, self.k, axis=self.k_axis)
         out = (
             Sii
-            * (norm / interpolation[:, :, -1])[:, :, jnp.newaxis]
+            * (
+                norm
+                / interpolation[*self.number_of_vec_axis * [jnp.s_[:]], -1]
+            )[*self.number_of_vec_axis * [jnp.s_[:]], jnp.newaxis]
             * 1
             * ureg.dimensionless
         )
-        return out + self.minima[:, :, jnp.newaxis]
+        return (
+            out
+            + self.minima[*self.number_of_vec_axis * [jnp.s_[:]], jnp.newaxis]
+        )
 
     def tree_flatten(self):
         return (
@@ -91,7 +119,7 @@ class SiiInterpolator:
             self.variables,
             self.interpolator,
             self.norm_interpolator,
-        ), (self.variables_units,)
+        ), (self.variables_units, self.out_shape)
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
@@ -103,7 +131,7 @@ class SiiInterpolator:
             obj.interpolator,
             obj.norm_interpolator,
         ) = children
-        (obj.variables_units,) = aux_data
+        (obj.variables_units, obj.out_shape) = aux_data
         return obj
 
 
@@ -166,12 +194,12 @@ class VRegularGridLinearInterpolator:
         return obj
 
 
-def _invert_k_axis(Sii, grid, x):
+def _invert_k_axis(array, grid, x, axis):
     """
-    Invert the k axis (axis 2) of Sii by interpolating to the values on grid
+    Invert the array along the axis by interpolating to the values x onto grid.
     """
     # Move the axis to invert to the end
-    y = jnp.moveaxis(Sii, 2, -1)
+    y = jnp.moveaxis(array, axis, -1)
     shape = y.shape[:-1]
 
     y = y.reshape(-1, y.shape[-1])
@@ -192,4 +220,4 @@ def _invert_k_axis(Sii, grid, x):
 
     # Restore original order
     result = result.reshape(*shape, grid.size)
-    return jnp.moveaxis(result, -1, 2)
+    return jnp.moveaxis(result, -1, axis)

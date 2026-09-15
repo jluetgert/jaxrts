@@ -40,7 +40,7 @@ from .setup import (
     get_probe_setup,
 )
 from .units import Quantity, to_array, ureg
-from .weissker_interpolator import SiiInterpolator
+from .weissker_interpolator import AutoNormInterpolator
 
 if TYPE_CHECKING:
     from .plasmastate import PlasmaState
@@ -772,13 +772,13 @@ class GridInterpolationSii(IonFeatModel):
 
     def __init__(
         self,
-        interpolator: SiiInterpolator,
+        interpolator: AutoNormInterpolator,
         variable_names: list[str],
     ) -> None:
         #: The :py:class:`jaxrts.weissker_interpolator.SiiInterpolator` that
         #: should be used for the interpolation.
         #: Containes the grid points, as well as the interpolation scheme.
-        self.interpolator: SiiInterpolator = interpolator
+        self.interpolator: AutoNormInterpolator = interpolator
         #: Defines what of the plasma-state should be passed to the
         #: ``interpolator`` when the latter is called. Naming allowed strings
         #: are either just flat attributes of the :py:class:`~.PlasmaState`, or
