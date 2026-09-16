@@ -26,8 +26,7 @@ def _peak_function2C(x):
 
 # Some models require additional parameters. Set them.
 def additional_model_parameters(
-    model: jaxrts.models.Model,
-    no_of_ions: int,
+    model: jaxrts.models.Model, no_of_ions: int, key: str
 ) -> tuple:
     """
     Define possible additional parameters for Models
@@ -79,6 +78,21 @@ def additional_model_parameters(
             jnp.linspace(0, 10, 10) / (1 * ureg.angstrom),
             jnp.array([0, 1e5]) * ureg.kelvin,
         )
+        return (interpolator, ["T_e"])
+
+    if model == jaxrts.models.GridInterpolation:
+        if key == "form-factors":
+            interpolator = jaxrts.weissker_interpolator.AutoNormInterpolator(
+                jnp.ones((10, no_of_ions, 10, 2)) * ureg.dimensionless,
+                jnp.linspace(0, 10, 10) / (1 * ureg.angstrom),
+                jnp.array([0, 1e5]) * ureg.kelvin,
+            )
+        else:
+            interpolator = jaxrts.weissker_interpolator.AutoNormInterpolator(
+                jnp.ones((no_of_ions, 1, 10, 2)) * ureg.dimensionless,
+                jnp.linspace(0, 10, 10) / (1 * ureg.angstrom),
+                jnp.array([0, 1e5]) * ureg.kelvin,
+            )
         return (interpolator, ["T_e"])
     return ()
 
@@ -159,7 +173,7 @@ def test_all_models_can_be_evaluated_one_component():
                     T_e=jnp.array([80]) * ureg.electron_volt / ureg.k_B,
                 )
                 one_comp_test_state[key] = model(
-                    *additional_model_parameters(model, 1)
+                    *additional_model_parameters(model, 1, key)
                 )
                 if key == "bf edge":
                     out = one_comp_test_state.evaluate(
@@ -191,7 +205,7 @@ def test_all_models_can_be_evaluated_two_component():
                     T_e=jnp.array([80]) * ureg.electron_volt / ureg.k_B,
                 )
                 two_comp_test_state[key] = model(
-                    *additional_model_parameters(model, 2)
+                    *additional_model_parameters(model, 2, key)
                 )
                 if key == "bf edge":
                     out = two_comp_test_state.evaluate(
