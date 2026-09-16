@@ -110,6 +110,12 @@ class AutoNormInterpolator:
                 / interpolation[*self.number_of_vec_axis * [jnp.s_[:]], -1]
             )[*self.number_of_vec_axis * [jnp.s_[:]], jnp.newaxis]
         )
+        # Constant values would result in nan. Fix this here.
+        out = jnp.where(
+            norm[*self.number_of_vec_axis * [jnp.s_[:]], jnp.newaxis] == 0,
+            0,
+            out,
+        )
         out += self.minima[*self.number_of_vec_axis * [jnp.s_[:]], jnp.newaxis]
         if self.unit is not None:
             out *= self.unit
