@@ -29,6 +29,8 @@ class AutoNormInterpolator:
         self.out_shape = array.shape[: -len(free_variables)]
         free_axis = len(free_variables) + 1
 
+        self.unit = array.units
+        array = array.m_as(self.unit)
         self.k = k.m_as(1 / ureg.angstrom)
         self.variables_units = [v.units for v in free_variables]
         self.variables = [
@@ -38,7 +40,7 @@ class AutoNormInterpolator:
             )
         ]
         self.minima = jnp.min(
-            array.m_as(ureg.dimensionless),
+            array,
             axis=jnp.arange(len(array.shape) - self.number_of_vec_axis)
             + self.number_of_vec_axis,
         )
@@ -47,7 +49,7 @@ class AutoNormInterpolator:
         ]
 
         integral = cumulative_trapezoid(
-            array.m_as(ureg.dimensionless),
+            array,
             x=self.k,
             axis=self.k_axis,
             initial=0.0,
@@ -97,20 +99,18 @@ class AutoNormInterpolator:
         )
 
         norm = self.norm_interpolator(_point)
-        Sii = jnp.gradient(interpolation, self.k, axis=self.k_axis)
+        interp = jnp.gradient(interpolation, self.k, axis=self.k_axis)
         out = (
-            Sii
+            interp
             * (
                 norm
                 / interpolation[*self.number_of_vec_axis * [jnp.s_[:]], -1]
             )[*self.number_of_vec_axis * [jnp.s_[:]], jnp.newaxis]
-            * 1
-            * ureg.dimensionless
         )
         return (
             out
             + self.minima[*self.number_of_vec_axis * [jnp.s_[:]], jnp.newaxis]
-        )
+        ) * self.unit
 
     def tree_flatten(self):
         return (
@@ -119,7 +119,7 @@ class AutoNormInterpolator:
             self.variables,
             self.interpolator,
             self.norm_interpolator,
-        ), (self.variables_units, self.out_shape)
+        ), (self.variables_units, self.out_shape, self.unit)
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
@@ -131,7 +131,7 @@ class AutoNormInterpolator:
             obj.interpolator,
             obj.norm_interpolator,
         ) = children
-        (obj.variables_units, obj.out_shape) = aux_data
+        (obj.variables_units, obj.out_shape, obj.unit) = aux_data
         return obj
 
 

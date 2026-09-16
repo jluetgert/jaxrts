@@ -52,12 +52,12 @@ def test_interpolation_with_vdims():
 
     grid = jnp.array([curve1, curve2]).T[jnp.newaxis, jnp.newaxis, :]
     interpolator = jaxrts.weissker_interpolator.AutoNormInterpolator(
-        grid * ureg.dimensionless,
+        grid * ureg.meter,
         x / (1 * ureg.angstrom),
         jnp.array([0, 1]) * ureg.dimensionless,
     )
 
-    interp = interpolator([0.5 * ureg.dimensionless]).m_as(ureg.dimensionless)[
+    interp = interpolator([0.5 * ureg.dimensionless]).m_as(ureg.meter)[
         0, 0, :
     ]
 
