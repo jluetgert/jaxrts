@@ -83,13 +83,13 @@ def additional_model_parameters(
     if model == jaxrts.models.GridInterpolation:
         if key == "form-factors":
             interpolator = jaxrts.weissker_interpolator.AutoNormInterpolator(
-                jnp.ones((10, no_of_ions, 10, 2)) * ureg.dimensionless,
+                jnp.ones((10, no_of_ions, 10, 2)),
                 jnp.linspace(0, 10, 10) / (1 * ureg.angstrom),
                 jnp.array([0, 1e5]) * ureg.kelvin,
             )
         else:
             interpolator = jaxrts.weissker_interpolator.AutoNormInterpolator(
-                jnp.ones((no_of_ions, 1, 10, 2)) * ureg.dimensionless,
+                jnp.ones((no_of_ions, 1, 10, 2)),
                 jnp.linspace(0, 10, 10) / (1 * ureg.angstrom),
                 jnp.array([0, 1e5]) * ureg.kelvin,
             )

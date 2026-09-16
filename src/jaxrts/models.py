@@ -382,11 +382,14 @@ class GridInterpolation(Model):
         self, plasma_state: "PlasmaState", setup: Setup
     ) -> jnp.ndarray:
         k_grid, val_grid = self.interpolate_to_grid(plasma_state)
-        unit = val_grid.units
+        if self.interpolator.unit is not None:
+            val_grid = val_grid.m_as(self.interpolator.unit)
         interp = VRegularGridLinearInterpolator(
-            [k_grid.m_as(1 / ureg.angstrom)], val_grid.m_as(unit)
+            [k_grid.m_as(1 / ureg.angstrom)], val_grid
         )([setup.k.m_as(1 / ureg.angstrom)])
-        return interp * unit
+        if self.interpolator.unit is not None:
+            interp *= self.interpolator.unit
+        return interp
 
     @jax.jit
     def interpolate_to_grid(
