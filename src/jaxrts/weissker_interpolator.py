@@ -16,7 +16,7 @@ from .units import Quantity, ureg
 class AutoNormInterpolator:
     def __init__(
         self,
-        array: Quantity,
+        array: Quantity | jnp.array,
         k: Quantity,
         *free_variables,
         grid_length: int = 1000,
@@ -29,8 +29,11 @@ class AutoNormInterpolator:
         self.out_shape = array.shape[: -len(free_variables)]
         free_axis = len(free_variables) + 1
 
-        self.unit = array.units
-        array = array.m_as(self.unit)
+        if isinstance(array, Quantity):
+            self.unit = array.units
+            array = array.m_as(self.unit)
+        else:
+            self.unit = None
         self.k = k.m_as(1 / ureg.angstrom)
         self.variables_units = [v.units for v in free_variables]
         self.variables = [
@@ -107,10 +110,10 @@ class AutoNormInterpolator:
                 / interpolation[*self.number_of_vec_axis * [jnp.s_[:]], -1]
             )[*self.number_of_vec_axis * [jnp.s_[:]], jnp.newaxis]
         )
-        return (
-            out
-            + self.minima[*self.number_of_vec_axis * [jnp.s_[:]], jnp.newaxis]
-        ) * self.unit
+        out += self.minima[*self.number_of_vec_axis * [jnp.s_[:]], jnp.newaxis]
+        if self.unit is not None:
+            out *= self.unit
+        return out
 
     def tree_flatten(self):
         return (

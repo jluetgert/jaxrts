@@ -31,15 +31,13 @@ def test_2d_interpolation():
 
     grid = jnp.array([[curve1, curve2], [curve3, curve4]]).T
     interpolator = jaxrts.weissker_interpolator.AutoNormInterpolator(
-        grid * ureg.dimensionless,
+        grid,
         x / (1 * ureg.angstrom),
         jnp.array([0, 1]) * ureg.dimensionless,
         jnp.array([0, 1]) * ureg.dimensionless,
     )
 
-    interp = interpolator(
-        [0.5 * ureg.dimensionless, 0.5 * ureg.dimensionless]
-    ).m_as(ureg.dimensionless)
+    interp = interpolator([0.5 * ureg.dimensionless, 0.5 * ureg.dimensionless])
 
     assert jnp.max(jnp.absolute(curve_true - interp)) < 0.02
 
@@ -57,8 +55,6 @@ def test_interpolation_with_vdims():
         jnp.array([0, 1]) * ureg.dimensionless,
     )
 
-    interp = interpolator([0.5 * ureg.dimensionless]).m_as(ureg.meter)[
-        0, 0, :
-    ]
+    interp = interpolator([0.5 * ureg.dimensionless]).m_as(ureg.meter)[0, 0, :]
 
     assert jnp.max(jnp.absolute(curve_true - interp)) < 0.02
